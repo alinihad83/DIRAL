@@ -8,7 +8,8 @@ Features:
 import tensorflow as tf
 import sys, os
 import numpy as np
-from policies import BoltzmanPolicy, SoftmaxPolicy, EpsilonGreedy, GreedyPolicy, RandomPolicy
+from utils.policies import BoltzmanPolicy, SoftmaxPolicy
+from algorithms.policies import EpsilonGreedy, GreedyPolicy, RandomPolicy
 from collections import deque
 #tf.config.optimizer.set_jit(True) # Enable XLA.
 #tf.debugging.set_log_device_placement(True)
@@ -25,7 +26,8 @@ class DRQN:
         :param name: Name of the scenario to test
         :param kwargs: Additional parameters.
         """
-        tf.reset_default_graph()
+        tf.compat.v1.disable_eager_execution()
+        tf.compat.v1.reset_default_graph()
         self.name = name  # Name of the experiment
         self.num_users = env.get_total_users()  # Number of users in the test scenario
         #========================== Add parameters of agent =============================#
@@ -54,44 +56,44 @@ class DRQN:
         if 1: #with tf.device("cpu"):
         # ========================== Build Network ============================= #
             if self.use_lstm_input:
-                self.inputs_ = tf.placeholder(tf.float32, [None, self.step_size, self.state_size], name='inputs_')
+                self.inputs_ = tf.compat.v1.placeholder(tf.float32, [None, self.step_size, self.state_size], name='inputs_')
             else:
-                self.inputs_ = tf.placeholder(tf.float32, [None, self.state_size], name='inputs_')
-            self.actions_ = tf.placeholder(tf.int32, [None], name='actions')
+                self.inputs_ = tf.compat.v1.placeholder(tf.float32, [None, self.state_size], name='inputs_')
+            self.actions_ = tf.compat.v1.placeholder(tf.int32, [None], name='actions')
             self.one_hot_actions = tf.one_hot(self.actions_, self.action_size)
-            self.targetQs_ = tf.placeholder(tf.float32, [None], name='target')
+            self.targetQs_ = tf.compat.v1.placeholder(tf.float32, [None], name='target')
 
         # Create the network and training parameters below.
-            with tf.variable_scope(name):
-                with tf.variable_scope("eval_net_scope"):
-                    self.eval_scope_name = tf.get_variable_scope().name
+            with tf.compat.v1.variable_scope(name):
+                with tf.compat.v1.variable_scope("eval_net_scope"):
+                    self.eval_scope_name = tf.compat.v1.get_variable_scope().name
                     self.qvalues = self._create_network()
 
-                with tf.variable_scope("target_net_scope"):
-                    self.target_scope_name = tf.get_variable_scope().name
+                with tf.compat.v1.variable_scope("target_net_scope"):
+                    self.target_scope_name = tf.compat.v1.get_variable_scope().name
                     self.target_qvalues = self._create_network()
 
             # ============== LOSS ============== #
                 self.gamma = kwargs.setdefault("gamma", 0.99)
-                self.Q = tf.reduce_sum(tf.multiply(self.qvalues, self.one_hot_actions), axis=1)
+                self.Q = tf.reduce_sum(input_tensor=tf.multiply(self.qvalues, self.one_hot_actions), axis=1)
                 self.h_loss = self.Q - self.targetQs_  # Loss value is calculated by Hysteretic theorem.
                 if self.hysteretic:
-                    self.h_loss = tf.where(self.h_loss<0, self.h_loss/10, self.h_loss)
-                self.loss = tf.reduce_mean(tf.square(self.h_loss))
-                self.opt = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
+                    self.h_loss = tf.compat.v1.where(self.h_loss<0, self.h_loss/10, self.h_loss)
+                self.loss = tf.reduce_mean(input_tensor=tf.square(self.h_loss))
+                self.opt = tf.compat.v1.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
 
         # target network update op
             self.update_target_op = []
-            t_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.target_scope_name)
-            e_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.eval_scope_name)
+            t_params = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.target_scope_name)
+            e_params = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.eval_scope_name)
             for i in range(len(t_params)):
-                self.update_target_op.append(tf.assign(t_params[i], e_params[i]))
+                self.update_target_op.append(tf.compat.v1.assign(t_params[i], e_params[i]))
 
         # init tensorflow session
-            config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+            config = tf.compat.v1.ConfigProto(allow_soft_placement=True, log_device_placement=False)
             config.gpu_options.allow_growth = True
-            self.sess = tf.Session(config=config)
-            self.sess.run(tf.global_variables_initializer())
+            self.sess = tf.compat.v1.Session(config=config)
+            self.sess.run(tf.compat.v1.global_variables_initializer())
 
         #################### Create Policy ######################
             self.policy_name = kwargs.setdefault("policy", "")
@@ -114,41 +116,43 @@ class DRQN:
         hidden_size = list(self.nn_layers.values())
         #hidden_size = hidden_size[0]
         if self.use_lstm_input:
-            lstm = tf.contrib.rnn.BasicLSTMCell(hidden_size[0])
+            lstm = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(hidden_size[0])
             #lstm = tf.contrib.rnn.GRUCell(hidden_size)
-            lstm_out, state = tf.nn.dynamic_rnn(lstm, self.inputs_, dtype=tf.float32)
+            lstm_out, state = tf.compat.v1.nn.dynamic_rnn(lstm, self.inputs_, dtype=tf.float32)
             reduced_out = lstm_out[:,-1,:]
             reduced_out = tf.reshape(reduced_out, shape=[-1, hidden_size[0]])
 
         else:
-            w1 = tf.Variable(tf.random_uniform([self.state_size, hidden_size[0]]))
+            w1 = tf.Variable(tf.random.uniform([self.state_size, hidden_size[0]]))
             b1 = tf.Variable(tf.constant(0.1, shape=[hidden_size[0]]))
             h1 = tf.matmul(self.inputs_, w1) + b1
             h1 = tf.nn.relu(h1)
-            h1 = tf.contrib.layers.layer_norm(h1)
+            h1 = tf.compat.v1.nn.layers.layer_norm(h1)
 
-        w2 = tf.Variable(tf.random_uniform([hidden_size[0], hidden_size[1]]))
+        w2 = tf.Variable(tf.random.uniform([hidden_size[0], hidden_size[1]]))
         b2 = tf.Variable(tf.constant(0.1, shape=[hidden_size[1]]))
         if self.use_lstm_input:
             h2 = tf.matmul(reduced_out, w2) + b2
         else:
             h2 = tf.matmul(h1, w2) + b2
         h2 = tf.nn.relu(h2)
-        h2 = tf.contrib.layers.layer_norm(h2)
+        # h2 = tf.compat.v1.nn.layers.layer_norm(h2)
+        layer_norma = tf.keras.layers.LayerNormalization(axis = -1)
+        layer_norma(h2)
 
         if len(hidden_size) == 3:
-            w3 = tf.Variable(tf.random_uniform([hidden_size[1], hidden_size[2]]))
+            w3 = tf.Variable(tf.random.uniform([hidden_size[1], hidden_size[2]]))
             b3 = tf.Variable(tf.constant(0.1, shape=[hidden_size[2]]))
             h3 = tf.matmul(h2, w3) + b3
             h3 = tf.nn.relu(h3)
             h3 = tf.contrib.layers.layer_norm(h3)
 
-            w4 = tf.Variable(tf.random_uniform([hidden_size[2], self.action_size]))
+            w4 = tf.Variable(tf.random.uniform([hidden_size[2], self.action_size]))
             b4 = tf.Variable(tf.constant(0, 1, shape=[self.action_size]))
             output = tf.matmul(h3, w4) + b4
 
         elif len(hidden_size) == 2:
-            w3 = tf.Variable(tf.random_uniform([hidden_size[1], self.action_size]))
+            w3 = tf.Variable(tf.random.uniform([hidden_size[1], self.action_size]))
             b3 = tf.Variable(tf.constant(0, 1, shape=[self.action_size]))
             output = tf.matmul(h2, w3) + b3
 
@@ -396,8 +400,8 @@ class DRQN:
         dir_name = os.path.join(dir_name, self.name)
         if not os.path.exists(dir_name):
             os.mkdir(dir_name)
-        model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.name)
-        saver = tf.train.Saver(model_vars)
+        model_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.name)
+        saver = tf.compat.v1.train.Saver(model_vars)
         saver.save(self.sess, os.path.join(dir_name, ("sim_%d_%d") % (simulation, slot)))
 
     def load_model(self, dir_name, epoch=0, name=None):
@@ -411,29 +415,29 @@ class DRQN:
         """
         if name is None or name == self.name:  # the name of saved model is the same as ours
             dir_name = os.path.join(dir_name, self.name)
-            model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.name)
+            model_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.name)
             #model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-            saver = tf.train.Saver(model_vars)
+            saver = tf.compat.v1.train.Saver(model_vars)
             # dir_name = dir_name + "/sim_0"
             saver.restore(self.sess, os.path.join(dir_name, ("sim_0_%d") % epoch))
         else:  # load a checkpoint with different name
-            backup_graph = tf.get_default_graph()
+            backup_graph = tf.compat.v1.get_default_graph()
             kv_dict = {}
 
             # load checkpoint from another saved graph
-            with tf.Graph().as_default(), tf.Session() as sess:
-                tf.train.import_meta_graph(os.path.join(dir_name, name, (self.subclass_name + "_%d") % epoch + ".meta"))
+            with tf.Graph().as_default(), tf.compat.v1.Session() as sess:
+                tf.compat.v1.train.import_meta_graph(os.path.join(dir_name, name, (self.subclass_name + "_%d") % epoch + ".meta"))
                 dir_name = os.path.join(dir_name, name)
-                model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, name)
-                sess.run(tf.global_variables_initializer())
-                saver = tf.train.Saver(model_vars)
+                model_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, name)
+                sess.run(tf.compat.v1.global_variables_initializer())
+                saver = tf.compat.v1.train.Saver(model_vars)
                 saver.restore(sess, os.path.join(dir_name, (self.subclass_name + "_%d") % epoch))
-                for item in tf.global_variables():
+                for item in tf.compat.v1.global_variables():
                     kv_dict[item.name] = sess.run(item)
 
             # assign to now graph
             backup_graph.as_default()
-            model_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.name)
+            model_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.name)
             for item in model_vars:
                 old_name = item.name.replace(self.name, name)
-                self.sess.run(tf.assign(item, kv_dict[old_name]))
+                self.sess.run(tf.compat.v1.assign(item, kv_dict[old_name]))

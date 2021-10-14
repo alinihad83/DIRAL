@@ -91,7 +91,7 @@ class BoltzmanPolicy():
 
 
 def normalize_with_moments(x, axes=[0], epsilon=1e-8):
-	mean, variance = tf.nn.moments(x, axes=axes)
+	mean, variance = tf.nn.moments(x=x, axes=axes)
 	x_normed = (x - mean) / tf.sqrt(variance + epsilon)
 	return x_normed
 

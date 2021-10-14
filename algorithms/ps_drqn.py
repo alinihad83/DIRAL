@@ -50,23 +50,23 @@ class DeepRecurrentQNetwork(TFBaseModel):
 
         # ======================= build network =======================
         # input place holder
-        self.target = tf.placeholder(tf.float32, [None], name="target")
+        self.target = tf.compat.v1.placeholder(tf.float32, [None], name="target")
 
-        self.input_state = tf.placeholder(tf.float32, [None, self.state_space], name="input_state")
-        self.action = tf.placeholder(tf.int32, [None], name="action")
-        self.mask = tf.placeholder(tf.float32, [None], name="mask")
+        self.input_state = tf.compat.v1.placeholder(tf.float32, [None, self.state_space], name="input_state")
+        self.action = tf.compat.v1.placeholder(tf.int32, [None], name="action")
+        self.mask = tf.compat.v1.placeholder(tf.float32, [None], name="mask")
 
-        self.batch_size_ph = tf.placeholder(tf.int32, [])
-        self.unroll_step_ph = tf.placeholder(tf.int32, [])
+        self.batch_size_ph = tf.compat.v1.placeholder(tf.int32, [])
+        self.unroll_step_ph = tf.compat.v1.placeholder(tf.int32, [])
 
         # build a graph
-        with tf.variable_scope(self.name):
-            with tf.variable_scope("eval_net_scope"):
-                self.eval_scope_name = tf.get_variable_scope().name
+        with tf.compat.v1.variable_scope(self.name):
+            with tf.compat.v1.variable_scope("eval_net_scope"):
+                self.eval_scope_name = tf.compat.v1.get_variable_scope().name
                 self.qvalues, self.state_in, self.rnn_state = \
                     self._create_network(self.input_state)
-            with tf.variable_scope("target_net_scope"):
-                self.target_scope_name = tf.get_variable_scope().name
+            with tf.compat.v1.variable_scope("target_net_scope"):
+                self.target_scope_name = tf.compat.v1.get_variable_scope().name
                 self.target_qvalues, self.target_state_in, self.target_rnn_state = \
                     self._create_network(self.input_state)
 
@@ -74,22 +74,22 @@ class DeepRecurrentQNetwork(TFBaseModel):
         self.gamma = kwargs.setdefault("reward_decay", 0.99)
         self.actions_onehot = tf.one_hot(self.action, self.num_actions)
         self.td_error = tf.square(
-            self.target - tf.reduce_sum(tf.multiply(self.actions_onehot, self.qvalues), axis=1))
-        self.loss = tf.reduce_sum(self.td_error * self.mask) / tf.reduce_sum(self.mask)
-        self.loss_summary = tf.summary.scalar(name="Loss_summary", tensor=self.loss)
+            self.target - tf.reduce_sum(input_tensor=tf.multiply(self.actions_onehot, self.qvalues), axis=1))
+        self.loss = tf.reduce_sum(input_tensor=self.td_error * self.mask) / tf.reduce_sum(input_tensor=self.mask)
+        self.loss_summary = tf.compat.v1.summary.scalar(name="Loss_summary", tensor=self.loss)
 
         # train op (clip gradient)
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, name="ADAM")
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate, name="ADAM")
         gradients, variables = zip(*optimizer.compute_gradients(self.loss))
         gradients, _ = tf.clip_by_global_norm(gradients, 10.0)
         self.train_op = optimizer.apply_gradients(zip(gradients, variables))
 
         # target network update op
         self.update_target_op = []
-        t_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.target_scope_name)
-        e_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.eval_scope_name)
+        t_params = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.target_scope_name)
+        e_params = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.eval_scope_name)
         for i in range(len(t_params)):
-            self.update_target_op.append(tf.assign(t_params[i], e_params[i]))
+            self.update_target_op.append(tf.compat.v1.assign(t_params[i], e_params[i]))
 
         # Initialize the tensor board
         if not os.path.exists("summaries"):
@@ -98,11 +98,11 @@ class DeepRecurrentQNetwork(TFBaseModel):
             os.mkdir(os.path.join("summaries", "first"))
 
         # Init tensorflow session
-        config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+        config = tf.compat.v1.ConfigProto(allow_soft_placement=True, log_device_placement=False)
         config.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=config)
-        self.sum_writer = tf.summary.FileWriter(os.path.join("summaries", "first"))
-        self.sess.run(tf.global_variables_initializer())
+        self.sess = tf.compat.v1.Session(config=config)
+        self.sum_writer = tf.compat.v1.summary.FileWriter(os.path.join("summaries", "first"))
+        self.sess.run(tf.compat.v1.global_variables_initializer())
 
         # Init memory buffers
         #self.memory_size = int(kwargs.setdefault("memory_size", 2**10))
@@ -127,39 +127,39 @@ class DeepRecurrentQNetwork(TFBaseModel):
         hidden_size = self.nn_layers.values()
         if len(hidden_size) is 1:
             print("1 Layer DRQN NN with " + str(hidden_size[0]) + " neurons")
-            dense = tf.layers.dense(input_state,  units=hidden_size[0], activation=tf.nn.relu,
+            dense = tf.compat.v1.layers.dense(input_state,  units=hidden_size[0], activation=tf.nn.relu,
                                     name="dense", reuse=reuse)
             state_size = hidden_size[0]
         elif len(hidden_size) is 2:
             print("2 Layers DRQN NN with " + str(hidden_size[0]) + " and " + str(hidden_size[1]) + " neurons")
             # TODO: think how to do it better.
-            h_state = tf.layers.dense(input_state, units=hidden_size[0], activation=tf.nn.relu,
+            h_state = tf.compat.v1.layers.dense(input_state, units=hidden_size[0], activation=tf.nn.relu,
                                       name="h_state", reuse=reuse)
             # TODO: I am not sure whether I need to use one NN or multiple NN.
-            dense = tf.layers.dense(h_state, units=hidden_size[1], activation=tf.nn.relu,
+            dense = tf.compat.v1.layers.dense(h_state, units=hidden_size[1], activation=tf.nn.relu,
                                     name="dense", reuse=reuse)
             state_size = hidden_size[1]
 
         # RNN
 
         # TODO: try also with LSTM?
-        rnn_cell = tf.contrib.rnn.GRUCell(num_units=state_size)
+        rnn_cell = tf.compat.v1.nn.rnn_cell.GRUCell(num_units=state_size)
         rnn_in = tf.reshape(dense, shape=[self.batch_size_ph, self.unroll_step_ph, state_size])
         state_in = rnn_cell.zero_state(self.batch_size_ph, tf.float32)
-        rnn, rnn_state = tf.nn.dynamic_rnn(
+        rnn, rnn_state = tf.compat.v1.nn.dynamic_rnn(
             cell=rnn_cell, inputs=rnn_in, dtype=tf.float32, initial_state=state_in
         )
 
         rnn = tf.reshape(rnn, shape=[-1, state_size])
 
         if self.use_dueling:
-            value = tf.layers.dense(dense, units=1, name="dense_value", reuse=reuse)
-            advantage = tf.layers.dense(dense, units=self.num_actions, use_bias=False,
+            value = tf.compat.v1.layers.dense(dense, units=1, name="dense_value", reuse=reuse)
+            advantage = tf.compat.v1.layers.dense(dense, units=self.num_actions, use_bias=False,
                                         name="dense_advantage", reuse=reuse)
 
-            qvalues = value + advantage - tf.reduce_sum(advantage, axis=1, keep_dims=True)
+            qvalues = value + advantage - tf.reduce_sum(input_tensor=advantage, axis=1, keepdims=True)
         else:
-            qvalues = tf.layers.dense(rnn, units=self.num_actions)
+            qvalues = tf.compat.v1.layers.dense(rnn, units=self.num_actions)
 
         self.state_size = state_size
 

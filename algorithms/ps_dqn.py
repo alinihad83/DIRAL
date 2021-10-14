@@ -74,38 +74,38 @@ class DeepQNetwork(TFBaseModel):
         self.train_ct = 0
 
         # ======================= build network =======================
-        tf.reset_default_graph()
+        tf.compat.v1.reset_default_graph()
         # input place holder
-        self.target = tf.placeholder(tf.float32, [None], name="target")
-        self.weight = tf.placeholder(tf.float32, [None], name="weight")
+        self.target = tf.compat.v1.placeholder(tf.float32, [None], name="target")
+        self.weight = tf.compat.v1.placeholder(tf.float32, [None], name="weight")
 
-        self.input_state = tf.placeholder(tf.float32, [None, self.state_space], name="input_state")
-        self.action = tf.placeholder(tf.int32, [None], name="action")
-        self.mask = tf.placeholder(tf.float32, [None], name="mask")
-        self.eps = tf.placeholder(tf.float32, name="eps")  # e-greedy
+        self.input_state = tf.compat.v1.placeholder(tf.float32, [None, self.state_space], name="input_state")
+        self.action = tf.compat.v1.placeholder(tf.int32, [None], name="action")
+        self.mask = tf.compat.v1.placeholder(tf.float32, [None], name="mask")
+        self.eps = tf.compat.v1.placeholder(tf.float32, name="eps")  # e-greedy
 
         # build a graph
-        with tf.variable_scope(self.name):
-            with tf.variable_scope("eval_net_scope"):
-                self.eval_scope_name = tf.get_variable_scope().name
+        with tf.compat.v1.variable_scope(self.name):
+            with tf.compat.v1.variable_scope("eval_net_scope"):
+                self.eval_scope_name = tf.compat.v1.get_variable_scope().name
                 self.qvalues = self._create_network(self.input_state, self.use_conv)
 
             if self.num_gpu > 1: # build inference graph for multiple gpus
                 self._build_multi_gpu_infer(self.num_gpu)
 
-            with tf.variable_scope("target_net_scope"):
-                self.target_scope_name = tf.get_variable_scope().name
+            with tf.compat.v1.variable_scope("target_net_scope"):
+                self.target_scope_name = tf.compat.v1.get_variable_scope().name
                 self.target_qvalues = self._create_network(self.input_state, self.use_conv)
 
         # loss
         self.gamma = kwargs.setdefault("reward_decay", 0.99)
         self.actions_onehot = tf.one_hot(self.action, self.num_actions)
-        td_error = tf.square(self.target - tf.reduce_sum(tf.multiply(self.actions_onehot, self.qvalues), axis=1))
-        self.loss = tf.reduce_sum(td_error * self.mask) / tf.reduce_sum(self.mask)
-        self.loss_summary = tf.summary.scalar(name='Loss_summary', tensor=self.loss)
+        td_error = tf.square(self.target - tf.reduce_sum(input_tensor=tf.multiply(self.actions_onehot, self.qvalues), axis=1))
+        self.loss = tf.reduce_sum(input_tensor=td_error * self.mask) / tf.reduce_sum(input_tensor=self.mask)
+        self.loss_summary = tf.compat.v1.summary.scalar(name='Loss_summary', tensor=self.loss)
 
         # train op(clip gradient)
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, name="ADAM")
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate, name="ADAM")
         gradients, variables = zip(*optimizer.compute_gradients(self.loss))
         gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
         self.train_op = optimizer.apply_gradients(zip(gradients, variables), name="train_op")
@@ -113,11 +113,11 @@ class DeepQNetwork(TFBaseModel):
 
         # output action
         def out_action(qvalues):
-            best_action = tf.argmax(qvalues, axis=1)
-            best_action = tf.to_int32(best_action)
-            random_action = tf.random_uniform(tf.shape(best_action), 0, self.num_actions, tf.int32, name="random_action")
-            should_explore = tf.random_uniform(tf.shape(best_action), 0, 1) < self.eps
-            return tf.where(should_explore, random_action, best_action)
+            best_action = tf.argmax(input=qvalues, axis=1)
+            best_action = tf.cast(best_action, dtype=tf.int32)
+            random_action = tf.random.uniform(tf.shape(input=best_action), 0, self.num_actions, tf.int32, name="random_action")
+            should_explore = tf.random.uniform(tf.shape(input=best_action), 0, 1) < self.eps
+            return tf.compat.v1.where(should_explore, random_action, best_action)
 
         self.output_action = out_action(self.qvalues)
         if self.num_gpu > 1:
@@ -125,10 +125,10 @@ class DeepQNetwork(TFBaseModel):
 
         # target network update op
         self.update_target_op = []
-        t_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.target_scope_name)
-        e_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.eval_scope_name)
+        t_params = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.target_scope_name)
+        e_params = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, self.eval_scope_name)
         for i in range(len(t_params)):
-            self.update_target_op.append(tf.assign(t_params[i], e_params[i]))
+            self.update_target_op.append(tf.compat.v1.assign(t_params[i], e_params[i]))
 
         # Initialize the tensor board
         if not os.path.exists('summaries'):
@@ -137,11 +137,11 @@ class DeepQNetwork(TFBaseModel):
             os.mkdir(os.path.join('summaries', 'first'))
 
         # init tensorflow session
-        config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+        config = tf.compat.v1.ConfigProto(allow_soft_placement=True, log_device_placement=False)
         config.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=config)
-        self.summ_writer = tf.summary.FileWriter(os.path.join('summaries', 'first'), self.sess.graph)
-        self.sess.run(tf.global_variables_initializer())
+        self.sess = tf.compat.v1.Session(config=config)
+        self.summ_writer = tf.compat.v1.summary.FileWriter(os.path.join('summaries', 'first'), self.sess.graph)
+        self.sess.run(tf.compat.v1.global_variables_initializer())
 
         # init replay buffers
         self.replay_buffer_len = 0
@@ -168,11 +168,11 @@ class DeepQNetwork(TFBaseModel):
         if len(hidden_size) is 1:
             if self.activation == "Linear":
                 print("1 NN with Linear activation, " + str(hidden_size[0]) + " neurons")
-                h_state = tf.layers.dense(input_state,  units=hidden_size[0], activation=None,
+                h_state = tf.compat.v1.layers.dense(input_state,  units=hidden_size[0], activation=None,
                                     name="h_state", reuse=reuse)
             else:
                 print("1 NN with RELU activation, " + str(hidden_size[0]) + " neurons")
-                h_state = tf.layers.dense(input_state,  units=hidden_size[0], activation=tf.nn.relu,
+                h_state = tf.compat.v1.layers.dense(input_state,  units=hidden_size[0], activation=tf.nn.relu,
                                     name="h_state", reuse=reuse)
         elif len(hidden_size) is 2:
             print("2 Layers NN with " + str(hidden_size[0]) + " and " + str(hidden_size[1]) + " neurons")
@@ -180,20 +180,20 @@ class DeepQNetwork(TFBaseModel):
             if self.activation != "Linear":
                 activation = tf.nn.relu
 
-            h_state_0 = tf.layers.dense(input_state,  units=hidden_size[0], activation=activation,
+            h_state_0 = tf.compat.v1.layers.dense(input_state,  units=hidden_size[0], activation=activation,
                                     name="h_state_0", reuse=reuse)
 
-            h_state = tf.layers.dense(h_state_0,  units=hidden_size[1], activation=activation,
+            h_state = tf.compat.v1.layers.dense(h_state_0,  units=hidden_size[1], activation=activation,
                                     name="h_state", reuse=reuse)
 
         if self.use_dueling:
-            value = tf.layers.dense(h_state, units=1, name="value", reuse=reuse)
-            advantage = tf.layers.dense(h_state, units=self.num_actions, use_bias=False,
+            value = tf.compat.v1.layers.dense(h_state, units=1, name="value", reuse=reuse)
+            advantage = tf.compat.v1.layers.dense(h_state, units=self.num_actions, use_bias=False,
                                         name="advantage", reuse=reuse)
 
-            qvalues = value + advantage - tf.reduce_mean(advantage, axis=1, keep_dims=True)
+            qvalues = value + advantage - tf.reduce_mean(input_tensor=advantage, axis=1, keepdims=True)
         else:
-            qvalues = tf.layers.dense(h_state, units=self.num_actions, name="value", reuse=reuse)
+            qvalues = tf.compat.v1.layers.dense(h_state, units=self.num_actions, name="value", reuse=reuse)
 
         return qvalues
 

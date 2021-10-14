@@ -4,7 +4,7 @@ import tensorflow as tf
 
 class PPO(object):
     def __init__(self, env, name="PPO", **kwargs):
-        tf.reset_default_graph()
+        tf.compat.v1.reset_default_graph()
         self.name = name
         self.s_dim = env.get_state_space()
         self.a_dim = env.get_action_space()
@@ -23,39 +23,39 @@ class PPO(object):
         hidden_size = list(self.nn_layers.values())
         self.hidden_size = hidden_size[0]
 
-        self.sess = tf.Session()
+        self.sess = tf.compat.v1.Session()
         if self.use_lstm:
             # NOTE: use seperate LSTM layer for actor and critic.
             # ACTOR LSTM
-            with tf.variable_scope('lstm_actor'):
-                self.inputs_ = tf.placeholder(tf.float32, [None, self.step_size, self.s_dim], name='inputs_')
-                lstm = tf.contrib.rnn.BasicLSTMCell(self.hidden_size)
+            with tf.compat.v1.variable_scope('lstm_actor'):
+                self.inputs_ = tf.compat.v1.placeholder(tf.float32, [None, self.step_size, self.s_dim], name='inputs_')
+                lstm = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(self.hidden_size)
                 #lstm = tf.cont rib.rnn.GRUCell(self.hidden_size)
-                lstm_out, state = tf.nn.dynamic_rnn(lstm, self.inputs_, dtype=tf.float32)
+                lstm_out, state = tf.compat.v1.nn.dynamic_rnn(lstm, self.inputs_, dtype=tf.float32)
                 reduced_out = lstm_out[:,-1,:]
                 self.reduced_out = tf.reshape(reduced_out, shape=[-1, self.hidden_size])
             # CRITIC LSTM
-            with tf.variable_scope('lstm_critic'):
-                self.inputs_c = tf.placeholder(tf.float32, [None, self.step_size, self.s_dim], name='inputs_c')
-                lstm_c = tf.contrib.rnn.BasicLSTMCell(self.hidden_size)
+            with tf.compat.v1.variable_scope('lstm_critic'):
+                self.inputs_c = tf.compat.v1.placeholder(tf.float32, [None, self.step_size, self.s_dim], name='inputs_c')
+                lstm_c = tf.compat.v1.nn.rnn_cell.BasicLSTMCell(self.hidden_size)
                 #lstm = tf.cont rib.rnn.GRUCell(self.hidden_size)
-                lstm_out_c, state_c = tf.nn.dynamic_rnn(lstm_c, self.inputs_c, dtype=tf.float32)
+                lstm_out_c, state_c = tf.compat.v1.nn.dynamic_rnn(lstm_c, self.inputs_c, dtype=tf.float32)
                 reduced_out_c = lstm_out_c[:,-1,:]
                 self.reduced_out_c = tf.reshape(reduced_out_c, shape=[-1, self.hidden_size])
         else:
-            self.inputs_ = tf.placeholder(tf.float32, [None, self.s_dim], 'state')
+            self.inputs_ = tf.compat.v1.placeholder(tf.float32, [None, self.s_dim], 'state')
 
         # critic
-        w_init = tf.random_normal_initializer(0., .1)
+        w_init = tf.compat.v1.random_normal_initializer(0., .1)
         if self.use_lstm:
-            lc = tf.layers.dense(self.reduced_out_c, self.hidden_size, tf.nn.relu, kernel_initializer=w_init, name='lc')
+            lc = tf.compat.v1.layers.dense(self.reduced_out_c, self.hidden_size, tf.nn.relu, kernel_initializer=w_init, name='lc')
         else:
-            lc = tf.layers.dense(self.inputs_, self.hidden_size, tf.nn.relu, kernel_initializer=w_init, name='lc')
-        self.v = tf.layers.dense(lc, 1)
-        self.tfdc_r = tf.placeholder(tf.float32, [None, 1], 'discounted_r')
+            lc = tf.compat.v1.layers.dense(self.inputs_, self.hidden_size, tf.nn.relu, kernel_initializer=w_init, name='lc')
+        self.v = tf.compat.v1.layers.dense(lc, 1)
+        self.tfdc_r = tf.compat.v1.placeholder(tf.float32, [None, 1], 'discounted_r')
         self.advantage = self.tfdc_r - self.v
-        self.closs = tf.reduce_mean(tf.square(self.advantage))
-        self.ctrain_op = tf.train.AdamOptimizer(self.c_lr).minimize(self.closs)
+        self.closs = tf.reduce_mean(input_tensor=tf.square(self.advantage))
+        self.ctrain_op = tf.compat.v1.train.AdamOptimizer(self.c_lr).minimize(self.closs)
 
         # actor
         self.pi, pi_params = self._build_anet('pi', trainable=True)
@@ -63,34 +63,34 @@ class PPO(object):
 
         self.update_oldpi_op = [oldp.assign(p) for p, oldp in zip(pi_params, oldpi_params)]
 
-        self.tfa = tf.placeholder(tf.int32, [None, ], 'action')
-        self.tfadv = tf.placeholder(tf.float32, [None, 1], 'advantage')
+        self.tfa = tf.compat.v1.placeholder(tf.int32, [None, ], 'action')
+        self.tfadv = tf.compat.v1.placeholder(tf.float32, [None, 1], 'advantage')
 
-        a_indices = tf.stack([tf.range(tf.shape(self.tfa)[0], dtype=tf.int32), self.tfa], axis=1)
+        a_indices = tf.stack([tf.range(tf.shape(input=self.tfa)[0], dtype=tf.int32), self.tfa], axis=1)
         pi_prob = tf.gather_nd(params=self.pi, indices=a_indices)   # shape=(None, )
         oldpi_prob = tf.gather_nd(params=oldpi, indices=a_indices)  # shape=(None, )
         ratio = pi_prob/oldpi_prob
         surr = ratio * self.tfadv                       # surrogate loss
 
-        self.aloss = -tf.reduce_mean(tf.minimum(        # clipped surrogate objective
+        self.aloss = -tf.reduce_mean(input_tensor=tf.minimum(        # clipped surrogate objective
             surr,
             tf.clip_by_value(ratio, 1. - self.eps_clip, 1. + self.eps_clip) * self.tfadv))
 
-        self.atrain_op = tf.train.AdamOptimizer(self.a_lr).minimize(self.aloss)
+        self.atrain_op = tf.compat.v1.train.AdamOptimizer(self.a_lr).minimize(self.aloss)
 
 
         # Test with different PPO architecture.
         #self.entropy_tmp = -tf.reduce_sum(self.pi * tf.log(self.pi), axis=1)
         #self.entropy = tf.reduce_mean(self.entropy_tmp)
         e_coef = 0.01
-        log_pi = tf.log(tf.clip_by_value(self.pi, 1e-10, 1.0))
-        entropy = -tf.reduce_sum(self.pi * log_pi, axis=-1)
-        self.entropy_loss = -tf.reduce_sum(tf.reduce_mean(entropy, axis=-1)) * e_coef
+        log_pi = tf.math.log(tf.clip_by_value(self.pi, 1e-10, 1.0))
+        entropy = -tf.reduce_sum(input_tensor=self.pi * log_pi, axis=-1)
+        self.entropy_loss = -tf.reduce_sum(input_tensor=tf.reduce_mean(input_tensor=entropy, axis=-1)) * e_coef
         self.loss = self.aloss + 0.5 * self.closs + self.entropy_loss
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.0003).minimize(self.loss)
+        self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=0.0003).minimize(self.loss)
         #self.grads = self.optimizer.compute_gradients(self.loss)
         #self.update_batch = self.optimizer.minimize(self.loss)
-        self.sess.run(tf.global_variables_initializer())
+        self.sess.run(tf.compat.v1.global_variables_initializer())
 
     def update(self, e):
         data = np.vstack(e)
@@ -128,13 +128,13 @@ class PPO(object):
         return np.asarray(s), np.asarray(a), np.asarray(r)
 
     def _build_anet(self, name, trainable):
-        with tf.variable_scope(name):
+        with tf.compat.v1.variable_scope(name):
             if self.use_lstm:
-                l_a = tf.layers.dense(self.reduced_out, self.hidden_size, tf.nn.relu, trainable=trainable)
+                l_a = tf.compat.v1.layers.dense(self.reduced_out, self.hidden_size, tf.nn.relu, trainable=trainable)
             else:
-                l_a = tf.layers.dense(self.inputs_, self.hidden_size, tf.nn.relu, trainable=trainable)
-            a_prob = tf.layers.dense(l_a, self.a_dim, tf.nn.softmax, trainable=trainable)
-        params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=name)
+                l_a = tf.compat.v1.layers.dense(self.inputs_, self.hidden_size, tf.nn.relu, trainable=trainable)
+            a_prob = tf.compat.v1.layers.dense(l_a, self.a_dim, tf.nn.softmax, trainable=trainable)
+        params = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, scope=name)
         return a_prob, params
 
     def choose_action(self, s):  # run by a local

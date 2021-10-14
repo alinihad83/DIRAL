@@ -1,7 +1,7 @@
 from __future__ import division
 import numpy as np
 import math
-from network import Network
+from envs.network import Network
 
 class TestEnv:
     def __init__(self, **kwargs):
